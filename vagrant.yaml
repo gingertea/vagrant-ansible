@@ -1,0 +1,4 @@
+---
+ip_address: 10.208.50.10 # Master node gets this IP. Worker nodes get the successive IPs.
+master_name: k8s-master
+node_name_prefix: node
