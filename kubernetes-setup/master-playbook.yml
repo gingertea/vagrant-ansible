@@ -26,14 +26,14 @@
       state: present
 
   - name: Install docker and its dependencies
-    apt: 
+    apt:
       name: "{{ packages }}"
       state: present
       update_cache: yes
     vars:
       packages:
-      - docker-ce 
-      - docker-ce-cli 
+      - docker-ce
+      - docker-ce-cli
       - containerd.io
     notify:
       - docker status
@@ -42,7 +42,7 @@
     user:
       name: vagrant
       group: docker
-      
+
   - name: Remove swapfile from /etc/fstab
     mount:
       name: "{{ item }}"
@@ -54,8 +54,8 @@
 
   - name: Disable swap
     command: swapoff -a
-    when: ansible_swaptotal_mb > 0    
-    
+    when: ansible_swaptotal_mb > 0
+
   - name: Add an apt signing key for Kubernetes
     apt_key:
       url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
@@ -68,14 +68,14 @@
       filename: kubernetes.list
 
   - name: Install Kubernetes binaries
-    apt: 
+    apt:
       name: "{{ packages }}"
       state: present
       update_cache: yes
     vars:
       packages:
-        - kubelet 
-        - kubeadm 
+        - kubelet
+        - kubeadm
         - kubectl
 
   - name: Force kubelet to listen on host network IP
@@ -83,7 +83,6 @@
       dest: "/etc/default/kubelet"
       content: |
         KUBELET_EXTRA_ARGS=--node-ip="{{ node_ip }}"
-           
 
   - name: Restart kubelet
     service:
@@ -93,18 +92,30 @@
 
   - name: Initialize the Kubernetes cluster using kubeadm
     command: kubeadm init --apiserver-advertise-address="{{ node_ip }}" --apiserver-cert-extra-sans="{{ node_ip }}"  --node-name "{{ hostname }}" --pod-network-cidr=192.168.0.0/16
-    
-  - name: Setup kubeconfig for vagrant user
-    command: "{{ item }}"
-    with_items:
-     - mkdir -p /home/vagrant/.kube
-     - cp -i /etc/kubernetes/admin.conf /home/vagrant/.kube/config
-     - chown vagrant:vagrant /home/vagrant/.kube/config
+
+  - name: Setup kubeconfig - create directory for config file
+    file:
+      path: /home/vagrant/.kube
+      state: directory
+      mode: '0755'
+
+  - name: Setup kubeconfig - copy initial kubeconfig file
+    copy:
+      src: /etc/kubernetes/admin.conf
+      dest: /home/vagrant/.kube/config
+      remote_src: yes
+
+  - name: Setup kubeconfig - change file ownership, group and permissions
+    file:
+      path: /home/vagrant/.kube/config
+      owner: vagrant
+      group: vagrant
+      mode: '0644'
 
   - name: Install calico pod network
     become: false
-    command: kubectl apply -f https://docs.projectcalico.org/v3.8/manifests/calico.yaml
-    
+    command: kubectl apply -f "{{ calico_url }}"
+
   - name: Generate join command
     command: kubeadm token create --print-join-command
     register: join_command
@@ -112,8 +123,7 @@
   - name: Copy join command to local file
     local_action: copy content="{{ join_command.stdout_lines[0] }}" dest="./join-command"
     become: false
-    
+
   handlers:
     - name: docker status
       service: name=docker state=started
-    
