@@ -5,3 +5,4 @@ node_name_prefix: node
 calico_url: https://docs.projectcalico.org/v3.8/manifests/calico.yaml
 provision_local_volumes: false
 volume_size_gb: 1
+node_memory: 2048

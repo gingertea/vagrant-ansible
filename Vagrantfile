@@ -56,6 +56,7 @@ Vagrant.configure("2") do |config|
                 end
                 vb.customize ["storageattach", :id, "--storagectl", "SCSI", "--port", 2, "--device", 0, "--type", "hdd", "--medium", disk_filename]
               end
+              vb.memory = settings['node_memory']
             end
             node.vm.provision "ansible" do |ansible|
                 ansible.playbook = "kubernetes-setup/node-playbook.yml"
