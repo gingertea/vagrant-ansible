@@ -1,0 +1,7 @@
+---
+ip_address: 10.208.50.105 # nginx will listen on this IP.
+hostname: docker-registry
+basic_auth_user: crab
+basic_auth_pass: apple
+provision_local_volumes: true
+volume_size_gb: 16
