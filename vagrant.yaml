@@ -2,7 +2,8 @@
 ip_address: 10.208.50.10 # Master node gets this IP. Worker nodes get the successive IPs.
 master_name: k8s-master
 node_name_prefix: node
-calico_url: https://docs.projectcalico.org/v3.8/manifests/calico.yaml
+number_of_nodes: 2
+calico_url: https://docs.projectcalico.org/v3.12/manifests/calico.yaml
 provision_local_volumes: false
 volume_size_gb: 1
 node_memory: 2048
