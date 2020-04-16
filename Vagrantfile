@@ -7,8 +7,7 @@ require 'ipaddr'
 settings = YAML.load_file 'vagrant.yaml'
 ip_addr = IPAddr.new(settings['ip_address'])
 
-IMAGE_NAME = "ubuntu/xenial64"
-N = 2
+IMAGE_NAME = "ubuntu/bionic64"
 
 host_system_properties = IO.popen(["VBoxManage", "list", "systemproperties"])
 virtualbox_machine_folder = host_system_properties.select {|s| s.include?('Default machine folder')}[0].partition(':').last.strip
@@ -39,7 +38,7 @@ Vagrant.configure("2") do |config|
         end
     end
 
-    (1..N).each do |i|
+    (1..settings['number_of_nodes']).each do |i|
         config.vm.define "node-#{i}" do |node|
             ip_addr = ip_addr.succ
             node.vm.box = IMAGE_NAME
