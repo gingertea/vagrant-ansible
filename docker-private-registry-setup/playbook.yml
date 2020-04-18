@@ -1,0 +1,200 @@
+---
+- hosts: all
+  become: true
+  vars:
+  - cacerts_dir: "/etc/ssl"
+
+  tasks:
+  - name: Install packages that allow apt to be used over HTTPS
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+
+  - name: Install nginx and apache2-utils
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - nginx
+      - apache2-utils
+
+  - name: Install Python crypto libraries for generating key and cert for nginx.
+    apt:
+      name: python3-openssl
+      state: present
+
+  - name: Install libcrypto-utils.
+    apt:
+      name: libcrypto++-utils
+      state: present
+
+  - name: "Generate Root CA's Encrypted Private Key"
+    openssl_privatekey:
+      size: 4096
+      path: "{{ cacerts_dir }}/private/ca.key"
+
+  - name: "Generate Root CA's Self Signed Certificate Signing Request"
+    openssl_csr:
+      path: "/tmp/{{ nginx_ip_with_underscores }}_CA.csr"
+      privatekey_path: "{{ cacerts_dir }}/private/ca.key"
+      common_name: "{{ nginx_ip_with_underscores }}_CA"
+      basic_constraints_critical: yes
+      basic_constraints: ['CA:TRUE']
+
+  - name: "Generate Root CA's Self Signed Certificate"
+    openssl_certificate:
+      path: "{{ cacerts_dir }}/certs/{{ nginx_ip_with_underscores }}_CA.crt"
+      csr_path: "/tmp/{{ nginx_ip_with_underscores }}_CA.csr"
+      provider: selfsigned
+      privatekey_path: "{{ cacerts_dir }}/private/ca.key"
+
+  - name: Update OS trusted CA certificate keystore.
+    command: update-ca-certificates
+
+  - name: "Generate private key for nginx self-signed cert"
+    openssl_privatekey:
+      path: "/etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.key"
+
+  - name: Generate an OpenSSL CSR.
+    openssl_csr:
+      path: "/tmp/{{ nginx_ip_with_underscores }}.csr"
+      privatekey_path: "/etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.key"
+      common_name: "{{ nginx_ip }}.xip.io"
+
+  - name: Generate self-signed certificate for nginx
+    openssl_certificate:
+      path: "/etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.crt"
+      privatekey_path: "/etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.key"
+      csr_path: "/tmp/{{ nginx_ip_with_underscores }}.csr"
+      provider: ownca
+      ownca_path: "{{ cacerts_dir }}/certs/{{ nginx_ip_with_underscores }}_CA.crt"
+      ownca_privatekey_path: "{{ cacerts_dir }}/private/ca.key"
+
+  - name: Install pexpect library - required for automating interactive password prompt needed for setting up nginx basic auth
+    apt:
+      name: python3-pexpect
+      state: present
+
+  - name: Generate nginx auth credentials for Basic Auth.
+    expect:
+      command: htpasswd -c /etc/nginx/conf.d/registry.password {{ basic_auth_user }}
+      responses:
+        (?i)password: "{{ basic_auth_pass }}"
+    no_log: true
+
+  - name: Ignore vhost configs in nginx sites-enabled directory
+    replace:
+      dest: /etc/nginx/nginx.conf
+      regexp: '(.*sites-enabled.*)'
+      replace: '#\1'
+
+  - name: Configure nginx to listen on HTTPS with Basic Auth enabled
+    template:
+      src: nginx.conf.j2
+      dest: "/etc/nginx/conf.d/nginx.conf"
+    vars:
+      nginx_ip: "{{ nginx_ip }}"
+      nginx_ip_with_underscores: "{{ nginx_ip_with_underscores }}"
+    notify:
+      - nginx restart
+
+  - name: Copy nginx self-signed CA cert to localhost
+    fetch:
+      src: "{{ cacerts_dir }}/certs/{{ nginx_ip_with_underscores }}_CA.crt"
+      dest: "{{ nginx_ip_with_underscores }}_CA.crt"
+      flat: yes
+
+  - name: Add an apt signing key for Docker
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+
+  - name: Add apt repository for stable version
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable
+      state: present
+
+  - name: Install docker and its dependencies
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    notify:
+      - docker status
+
+  - name: Add vagrant user to docker group
+    user:
+      name: vagrant
+      group: docker
+
+  - stat:
+     path: /dev/sdc
+    register: additional_disk
+
+  - name: Create a new primary partition in attached additional disk
+    parted:
+      device: /dev/sdc
+      number: 1
+      state: present
+    when: additional_disk.stat.exists
+
+  - name: Format additional disk
+    filesystem:
+      fstype: ext4
+      dev: /dev/sdc1
+    when: additional_disk.stat.exists
+
+  - name: Mount the formatted disk to /data directory
+    mount:
+      path: /data
+      src: /dev/sdc1
+      fstype: ext4
+      opts: rw
+      state: mounted
+    when: additional_disk.stat.exists
+
+  - name: Modify permissions of mount directory
+    file:
+      path: /data
+      state: directory
+      mode: 0777
+      owner: vagrant
+    when: additional_disk.stat.exists
+
+  - name: Download latest release of docker-compose and make it executable
+    get_url:
+      url: https://github.com/docker/compose/releases/download/1.25.4/docker-compose-Linux-x86_64
+      dest: /usr/local/bin/docker-compose
+      mode: '0755'
+
+  - name: Copy registry setup docker-compose YAML
+    copy:
+      src:  docker-compose.yaml
+      dest: ~/docker-compose/
+
+  - name: Run docker-compose to start registry container at TCP/5000.
+    shell: docker-compose up -d
+    args:
+      chdir: ~/docker-compose/
+
+  handlers:
+    - name: docker status
+      service: name=docker state=started
+
+    - name: nginx restart
+      service: name=nginx state=restarted
