@@ -1,7 +1,9 @@
 ---
-ip_address: 10.208.50.105 # nginx will listen on this IP.
+ip_address: 127.0.0.1 # nginx will listen on this IP. To make your private registry available to external network, replace this with the public IP of your host machine.
+port: 8443 # your host firewall should permit this port.
 hostname: docker-registry
 basic_auth_user: crab
 basic_auth_pass: apple
 provision_local_volumes: true
 volume_size_gb: 16
+tls_cert_sans: ['DNS:docker-registry.example.com'] # Replace this with FQDN of your host

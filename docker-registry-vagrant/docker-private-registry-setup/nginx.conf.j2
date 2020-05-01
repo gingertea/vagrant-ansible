@@ -4,14 +4,14 @@ server 127.0.0.1:5000;
 
 server {
    listen 80 default_server;
-    server_name {{ nginx_ip }};
-    return 302 https://$server_name$request_uri;
+    server_name {{ nginx_server_name }};
+    return 302 https://{{ nginx_ip }}:{{ nginx_port }}$request_uri;
     }
 
 server {
 
   listen 443;
-  server_name {{ nginx_ip }};
+  server_name {{ nginx_server_name }};
   # SSL
    ssl on;
    ssl_certificate /etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.crt;
@@ -26,14 +26,14 @@ server {
   # Do not allow connections from docker 1.5 and earlier
   # docker pre-1.6.0 did not properly set the user agent on ping, catch "Go *" user agents
    location = / {
-    rewrite ^ https://$server_name$request_uri/v2/_catalog redirect;
+    rewrite ^ https://{{ nginx_ip }}:{{ nginx_port }}$request_uri/v2/_catalog redirect;
 }
     location /v2/ {
     if ($http_user_agent ~ "^(docker\/1\.(3|4|5(?!\.[0-9]-dev))|Go ).*$" ) {
       return 404;
     }
    # To add basic authentication to v2 use auth_basic setting plus add_header
-     auth_basic "registry.localhost";
+     auth_basic "docker registry";
      auth_basic_user_file /etc/nginx/conf.d/registry.password;
      add_header 'Docker-Distribution-Api-Version' 'registry/2.0' always;
 

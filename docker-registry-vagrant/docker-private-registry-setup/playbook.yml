@@ -70,6 +70,7 @@
       path: "/tmp/{{ nginx_ip_with_underscores }}.csr"
       privatekey_path: "/etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.key"
       common_name: "{{ nginx_ip }}.xip.io"
+      subject_alt_name: "{{ tls_cert_sans }}"
 
   - name: Generate self-signed certificate for nginx
     openssl_certificate:
@@ -104,14 +105,21 @@
       dest: "/etc/nginx/conf.d/nginx.conf"
     vars:
       nginx_ip: "{{ nginx_ip }}"
+      nginx_port: "{{ nginx_port }}"
       nginx_ip_with_underscores: "{{ nginx_ip_with_underscores }}"
+      nginx_server_name: "{{ nginx_server_name }}"
     notify:
       - nginx restart
+
+  - name: Create a temp directory for storing CA cert.
+    file:
+      path: temp
+      state: directory
 
   - name: Copy nginx self-signed CA cert to localhost
     fetch:
       src: "{{ cacerts_dir }}/certs/{{ nginx_ip_with_underscores }}_CA.crt"
-      dest: "{{ nginx_ip_with_underscores }}_CA.crt"
+      dest: "temp/{{ nginx_ip_with_underscores }}_CA.crt"
       flat: yes
 
   - name: Add an apt signing key for Docker
