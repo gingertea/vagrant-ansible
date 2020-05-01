@@ -3,6 +3,7 @@
 
 require 'yaml'
 require 'ipaddr'
+require 'socket'
 
 IMAGE_NAME = "ubuntu/xenial64"
 
@@ -16,13 +17,15 @@ Vagrant.configure("2") do |config|
 
     config.vm.provider "virtualbox" do |v|
 	      v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
-        v.memory = 1536
+        v.memory = 1200
         v.cpus = 1
     end
 
     config.vm.define "docker-registry" do |registry|
         registry.vm.box = IMAGE_NAME
-        registry.vm.network "private_network", ip:  ip_addr.to_s
+        # registry.vm.network "private_network", ip:  ip_addr.to_s
+        registry.vm.network "forwarded_port", guest: 443, host: 8443
+        registry.vm.network "forwarded_port", guest: 80, host: 8000
         registry.vm.hostname = settings['hostname']
         registry.vm.provider "virtualbox" do |vb|
           vb.name =  registry.vm.hostname
@@ -37,10 +40,23 @@ Vagrant.configure("2") do |config|
           end
         end
         registry.vm.provision "ansible" do |ansible|
+            # Fetch IP address and hostname of host system. These will be added in the SAN fields of multipurpose certficate that we will generate in the ansible playbook
+            host_ipv4_addresses = []
+            Socket.ip_address_list.each do |addr|
+              host_ipv4_addresses << addr.ip_address if addr.ipv4? == true
+            end
+            host_ipv4_addresses.map! {|addr| 'IP'+':'+addr}
+            host_hostname = Socket.gethostname
+            host_tls_cert_sans = host_ipv4_addresses
+            host_tls_cert_sans.push('DNS'+':'+host_hostname)
+            complete_tls_cert_sans = settings['tls_cert_sans'].concat(host_tls_cert_sans)
             ansible.playbook = "docker-private-registry-setup/playbook.yml"
             ansible.extra_vars = {
                 nginx_ip: ip_addr.to_s,
+                nginx_port: settings['port'],
                 nginx_ip_with_underscores: ip_addr.to_s.gsub('.','_'),
+                nginx_server_name: settings['hostname'],
+                tls_cert_sans: complete_tls_cert_sans,
                 basic_auth_user: settings['basic_auth_user'],
                 basic_auth_pass: settings['basic_auth_pass'],
             }
