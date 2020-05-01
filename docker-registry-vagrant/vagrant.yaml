@@ -6,4 +6,4 @@ basic_auth_user: crab
 basic_auth_pass: apple
 provision_local_volumes: true
 volume_size_gb: 16
-tls_cert_sans: ['DNS:docker-registry.example.com'] # Replace this with FQDN of your host
+tls_cert_sans: ['DNS:docker-registry.example.com', 'IP:127.0.0.1'] # Replace this with FQDN of your host
