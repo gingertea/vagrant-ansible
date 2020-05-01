@@ -50,6 +50,7 @@ Vagrant.configure("2") do |config|
             host_tls_cert_sans = host_ipv4_addresses
             host_tls_cert_sans.push('DNS'+':'+host_hostname)
             complete_tls_cert_sans = settings['tls_cert_sans'].concat(host_tls_cert_sans)
+            complete_tls_cert_sans = complete_tls_cert_sans.uniq
             ansible.playbook = "docker-private-registry-setup/playbook.yml"
             ansible.extra_vars = {
                 nginx_ip: ip_addr.to_s,
