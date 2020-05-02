@@ -69,7 +69,7 @@
     openssl_csr:
       path: "/tmp/{{ nginx_ip_with_underscores }}.csr"
       privatekey_path: "/etc/nginx/conf.d/{{ nginx_ip_with_underscores }}.key"
-      common_name: "{{ nginx_ip }}.xip.io"
+      common_name: "{{ nginx_ip }}"
       subject_alt_name: "{{ tls_cert_sans }}"
 
   - name: Generate self-signed certificate for nginx
