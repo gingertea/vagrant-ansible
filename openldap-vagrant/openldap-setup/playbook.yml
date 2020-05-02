@@ -1,0 +1,326 @@
+---
+- hosts: all
+  become: true
+  vars:
+    - ca_key_file: "/etc/ssl/private/{{ hostname }}_cakey.pem"
+    - ca_cert_file: "/etc/ssl/certs/{{ hostname }}_cacert.pem"
+    - ldap_key_file: "/etc/ssl/private/{{ hostname }}_slapd.pem"
+    - ldap_cert_file: "/etc/ssl/certs/{{ hostname }}_slapd_cert.pem"
+    - ansible_python_interpreter: /usr/bin/python3
+    - ldap_auth:
+       server_uri: ldap://localhost/
+       bind_dn: cn=admin,dc=directory,dc=example,dc=com
+       bind_pw: "{{ db_admin_passwd }}"
+
+
+  tasks:
+  - name: Install openldap and python ldap library packages
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - slapd
+      - ldap-utils
+      - libsasl2-dev
+      - python-dev
+      - libldap2-dev
+      - libssl-dev
+      - python-ldap3
+      - python-ldap
+      - python3-pip
+      - ssl-cert
+      - gnutls-bin
+
+  - name: Install python ldap and ssl libraries using pip.
+    pip:
+      name: "{{ libraries }}"
+    vars:
+      libraries:
+        - pyldap
+        - pyopenssl >= 0.15
+
+  - name: Openldap core config- set olcLogLevel to stats.
+    ldap_attr:
+      dn: cn=config
+      name: olcLogLevel
+      values: stats
+      state: exact
+
+  - name: Add openldap user to ssl-cert group
+    user:
+      name: openldap
+      groups: ssl-cert
+      append: yes
+    notify:
+      slapd restart
+
+  - name: "Generate Root CA's Encrypted Private Key"
+    openssl_privatekey:
+      size: 3072
+      path: "{{ ca_key_file }}"
+
+  - name: "Generate Root CA's Self Signed Certificate Signing Request"
+    openssl_csr:
+      path: "/tmp/{{ ip_address_with_underscores }}_CA.csr"
+      privatekey_path: "{{ ca_key_file }}"
+      common_name: "{{ ip_address_with_underscores }}_CA"
+      basic_constraints_critical: yes
+      basic_constraints: ['CA:TRUE']
+
+  - name: "Generate Root CA's Self Signed Certificate"
+    openssl_certificate:
+      path: "{{ ca_cert_file }}"
+      csr_path: "/tmp/{{ ip_address_with_underscores }}_CA.csr"
+      provider: selfsigned
+      privatekey_path: "{{ ca_key_file }}"
+
+  - name: Update OS trusted CA certificate keystore.
+    command: update-ca-certificates
+
+  - name: "Generate private key for openldap self-signed cert"
+    openssl_privatekey:
+      path: "{{ ldap_key_file }}"
+      mode: 0640
+      group: openldap
+
+  - name: Generate openldap CSR.
+    openssl_csr:
+      path: "/tmp/{{ ip_address_with_underscores }}.csr"
+      privatekey_path: "{{ ldap_key_file }}"
+      common_name: "{{ ip_address }}.xip.io"
+      subject_alt_name: "{{ tls_cert_sans }}"
+
+  - name: Generate a multipurpose self-signed certificate for openldap
+    openssl_certificate:
+      path: "{{ ldap_cert_file }}"
+      privatekey_path: "{{ ldap_key_file }}"
+      csr_path: "/tmp/{{ ip_address_with_underscores }}.csr"
+      provider: ownca
+      ownca_path: "{{ ca_cert_file }}"
+      ownca_privatekey_path: "{{ ca_key_file }}"
+
+  - name: Prepare ldif for importing TLS certificate config to Openldap.
+    copy:
+      dest: "/root/cert_info.ldif"
+      content: |
+        dn: cn=config
+        add: olcTLSCACertificateFile
+        olcTLSCACertificateFile: {{ ca_cert_file }}
+        -
+        add: olcTLSCertificateFile
+        olcTLSCertificateFile: {{ ldap_cert_file }}
+        -
+        add: olcTLSCertificateKeyFile
+        olcTLSCertificateKeyFile: {{ ldap_key_file}}
+
+  - name: Copy ldif files containing schema definitions of kubernetes auth objects
+    copy:
+      src: "{{ item }}"
+      dest: /tmp/
+    with_items:
+      ['kube_person.ldif', 'kube_token.ldif']
+
+
+  - name: Import kubernetes object class and attribute from LDIF file.
+    shell: ldapmodify -a -Y EXTERNAL -H ldapi:/// -f  /tmp/kube_token.ldif && touch ~/schema_add_attribute_success
+    args:
+      creates: ~/schema_add_attribute_success
+    notify:
+      slapd restart
+
+  - name: Import kubernetes object class and attribute from LDIF file.
+    shell: ldapmodify -a -Y EXTERNAL -H ldapi:/// -f  /tmp/kube_person.ldif && touch ~/schema_add_objectClass_success
+    args:
+      creates: ~/schema_add_objectClass_success
+    notify:
+      slapd restart
+
+  - name: Set openldap log file in rsyslog config.
+    lineinfile:
+      path: /etc/rsyslog.conf
+      line: 'LOCAL4.* /var/log/ldap.log'
+    notify:
+      syslogd restart
+
+  - name: Openldap initial config- define an admin user for config database.
+    ldap_attr:
+      dn: olcDatabase={0}config,cn=config
+      name: olcRootDN
+      values: cn=admin,cn=config
+      state: exact
+
+  - name: Openldap initial config- set password for config database.
+    ldap_attr:
+      dn: olcDatabase={0}config,cn=config
+      name: olcRootPW
+      values: "{{ config_admin_passwd }}"
+      state: exact
+
+  - name: Openldap initial config- define the base DN.
+    ldap_attr:
+      dn: olcDatabase={1}mdb,cn=config
+      name: olcSuffix
+      values: dc=directory,dc=example,dc=com
+      state: exact
+
+  - name: Openldap initial config- define the admin user for the user database .
+    ldap_attr:
+      dn: olcDatabase={1}mdb,cn=config
+      name: olcRootDN
+      values: cn=admin,dc=directory,dc=example,dc=com
+      state: exact
+
+  - name: Openldap initial config- set password for the user database .
+    ldap_attr:
+      dn: olcDatabase={1}mdb,cn=config
+      name: olcRootPW
+      values: "{{ db_admin_passwd }}"
+      state: exact
+
+  - name: Add the entry for base DN.
+    ldap_entry:
+      dn: dc=directory,dc=example,dc=com
+      objectClass:
+        - organization
+        - dcObject
+      attributes:
+        dc: directory
+        o: directory.example.com
+        description: "Example LDAP Server"
+      state: present
+      params: "{{ ldap_auth }}"
+
+  - name: Make sure we have a parent entry for users
+    ldap_entry:
+      dn: "ou=people,{{ base_dn }}"
+      objectClass: organizationalUnit
+      attributes:
+        ou: people
+      state: present
+      params: "{{ ldap_auth }}"
+
+  - name: Make sure we have a seperate parent entry for kubernetes users
+    ldap_entry:
+      dn: "ou=k8s,{{ base_dn }}"
+      objectClass: organizationalUnit
+      attributes:
+        ou: people
+      state: present
+      params: "{{ ldap_auth }}"
+
+  - name: Make sure we have a parent entry for groups
+    ldap_entry:
+      dn: "ou=groups,{{ base_dn }}"
+      objectClass: organizationalUnit
+      attributes:
+        ou: groups
+      state: present
+      params: "{{ ldap_auth }}"
+
+  - name: Add several users
+    ldap_entry:
+      dn: "uid={{ item.uid }},ou=people,dc=directory,dc=example,dc=com"
+      objectClass: inetOrgPerson
+      attributes:
+        uid: "{{ item.uid }}"
+        cn: "{{ item.cn }}"
+        sn: "{{ item.sn }}"
+        carLicense: "{{ item.carLicense }}"
+        homePhone: "{{ item.homePhone }}"
+        mail: "{{ item.uid }}@example.com"
+      state: present
+      params: "{{ ldap_auth }}"
+    with_items: "{{ ldap_users }}"
+
+  - name: Setting a common password for all users
+    ldap_passwd:
+      dn:  "uid={{ item.uid }},ou=people,{{ base_dn }}"
+      passwd: "{{ common_passwd }}"
+      bind_dn: cn=admin,{{ base_dn }}
+      bind_pw: "{{ db_admin_passwd }}"
+    with_items: "{{ ldap_users }}"
+    no_log: true
+
+  - name: Add seperate users for authenticating to kubernetes cluster.
+    ldap_entry:
+      dn: "uid={{ item.uid }},ou=k8s,{{ base_dn }}"
+      objectClass:
+        - person
+        - inetOrgPerson
+        - organizationalPerson
+        - kubernetesAuthPerson
+      attributes:
+        uid: "{{ item.uid }}"
+        cn: "{{ item.cn }}"
+        sn: "{{ item.sn }}"
+        carLicense: "{{ item.carLicense }}"
+        homePhone: "{{ item.homePhone }}"
+        mail: "{{ item.uid }}@example.com"
+        employeeNumber: "{{ item.employeeNumber }}"
+        kubernetesToken: "{{ lookup('password', '/tmp/{{ item.uid }} length=32 chars=ascii_letters,digits') }}"
+      state: present
+      params: "{{ ldap_auth }}"
+    with_items: "{{ ldap_users }}"
+
+  - name: Add some groups and seed with one user initially.
+    ldap_entry:
+      dn: "cn={{ item.0.cn }},ou=groups,{{ base_dn }}"
+      objectClass: groupOfNames
+      attributes:
+        cn: "{{ item.0.cn }}"
+        description: "{{ item.0.description }}"
+        member: "uid={{ item.1 }},ou=people,{{base_dn}}"
+      state: present
+      params: "{{ ldap_auth }}"
+    with_subelements:
+      - "{{ ldap_groups }}"
+      - members
+    notify:
+      slapd start
+
+  - name: Map users in people OU to groups.
+    ldap_attr:
+      dn: "cn={{ item.0.cn }},ou=groups,{{ base_dn }}"
+      name: member
+      values: "uid={{ item.1 }},ou=people,{{base_dn}}"
+      bind_dn: cn=admin,{{ base_dn }}
+      bind_pw: "{{ db_admin_passwd }}"
+    with_subelements:
+      - "{{ ldap_groups }}"
+      - members
+    notify:
+      slapd start
+
+  - name: Map users in k8s OU to groups.
+    ldap_attr:
+      dn: "cn={{ item.0.cn }},ou=groups,{{ base_dn }}"
+      name: member
+      values: "uid={{ item.1 }},ou=k8s,{{base_dn}}"
+      bind_dn: cn=admin,{{ base_dn }}
+      bind_pw: "{{ db_admin_passwd }}"
+    with_subelements:
+      - "{{ ldap_groups }}"
+      - members
+    notify:
+      slapd start
+
+  - name: Create a temp directory for storing CA cert.
+    file:
+      path: temp
+      state: directory
+
+  - name: Copy nginx self-signed CA cert to localhost
+    fetch:
+      src: "{{ ca_cert_file }}"
+      dest: "temp/ca_cert.pem"
+      flat: yes
+
+  handlers:
+    - name: syslogd restart
+      service: name=rsyslog state=restarted
+    - name: slapd start
+      service: name=slapd state=started
+    - name: slapd restart
+      service: name=slapd state=restarted

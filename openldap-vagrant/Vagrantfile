@@ -1,0 +1,63 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require 'yaml'
+require 'ipaddr'
+require 'socket'
+
+IMAGE_NAME = "ubuntu/xenial64"
+
+settings = YAML.load_file 'vagrant.yaml'
+ip_addr = IPAddr.new(settings['ip_address'])
+host_system_properties = IO.popen(["VBoxManage", "list", "systemproperties"])
+virtualbox_machine_folder = host_system_properties.select {|s| s.include?('Default machine folder')}[0].partition(':').last.strip
+
+Vagrant.configure("2") do |config|
+    config.ssh.insert_key = false
+
+    config.vm.provider "virtualbox" do |v|
+	      v.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]
+        v.memory = 1024
+        v.cpus = 1
+    end
+
+    config.vm.define "openldap" do |ldap|
+        ldap.vm.box = IMAGE_NAME
+        # ldap.vm.network "private_network", ip:  ip_addr.to_s
+        ldap.vm.network "forwarded_port", guest: 389, host: 1389
+        ldap.vm.hostname = settings['hostname']
+        ldap.vm.provider "virtualbox" do |vb|
+          vb.name =  ldap.vm.hostname
+        end
+        ldap.vm.provision "ansible" do |ansible|
+            ansible.playbook = "openldap-setup/playbook.yml"
+
+            # Fetch IP address and hostname of host system. These will be added in the SAN fields of multipurpose certficate that we will generate in the ansible playbook
+            host_ipv4_addresses = []
+            Socket.ip_address_list.each do |addr|
+              host_ipv4_addresses << addr.ip_address if addr.ipv4? == true
+            end
+            host_ipv4_addresses.map! {|addr| 'IP'+':'+addr}
+            host_hostname = Socket.gethostname
+            host_tls_cert_sans = host_ipv4_addresses
+            host_tls_cert_sans.push('DNS'+':'+host_hostname)
+            complete_tls_cert_sans = settings['tls_cert_sans'].concat(host_tls_cert_sans)
+
+            guest_ip_address = settings['ip_address']
+            ansible.extra_vars = {
+              config_admin_passwd: settings['config_admin_passwd'],
+              db_admin_passwd: settings['db_admin_passwd'],
+              common_passwd: settings['common_passwd'],
+              common_kubernetes_token: settings['common_kubernetes_token'],
+              ip_address: guest_ip_address.to_s,
+              ip_address_with_underscores: guest_ip_address.to_s.gsub('.','_'),
+              tls_cert_sans: complete_tls_cert_sans,
+              hostname: settings['hostname'],
+              ldap_users: settings['ldap_users'],
+              ldap_groups: settings['ldap_groups'],
+              base_dn: settings['base_dn']
+              }
+        end
+    end
+
+end

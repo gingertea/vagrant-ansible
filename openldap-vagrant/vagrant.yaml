@@ -1,0 +1,26 @@
+ip_address: 127.0.0.1 # openldap will listen on this IP. To make your private registry available to external network, replace this with the public IP of your host machine.
+hostname: directory.example.com
+base_dn: dc=directory,dc=example,dc=com
+tls_cert_sans: ['DNS:directory.example.com', 'DNS:kube-ldap.example.com', 'DNS:dex.example.com', 'IP:127.0.0.1']  # Replace this with FQDN and IP of your host
+config_admin_passwd: secret
+db_admin_passwd: secret
+common_passwd: password
+
+ldap_users:
+  - { uid: 'ron', cn: 'Ronald Barfly', sn: 'Barfly', carLicense: 'CAR1232', employeeNumber: 501, homePhone: '91-111-1222' }
+  - { uid: 'bon', cn: 'Bonny Tippler', sn: 'Tippler', carLicense: 'CAR1233', employeeNumber: 503, homePhone: '91-111-1233' }
+  - { uid: 'jon', cn: 'Jon Boozer', carLicense: 'CAR1231', sn: 'Boozer', employeeNumber: 504, homePhone: '91-111-1221' }
+  - { uid: 'von', cn: 'Von Sot', carLicense: 'CAR1239', sn: 'Sot', employeeNumber: 505, homePhone: '91-111-2229' }
+  - { uid: 'don', cn: 'Donny Drunkard', carLicense: 'CAR1234', sn: 'Drunkard', employeeNumber: 506, homePhone: '91-111-2224' }
+  - { uid: 'bob', cn: 'Bob Dipso', carLicense: 'CAR1236', sn: 'Dipso', employeeNumber: 507, homePhone: '91-111-2226' }
+  - { uid: 'rob', cn: 'Rob Soak', carLicense: 'CAR1235', sn: 'Soak', employeeNumber: 508, homePhone: '91-111-2225' }
+  - { uid: 'dob', cn: 'Dob Bibber', carLicense: 'CAR1238', sn: 'Bibber', employeeNumber: 509, homePhone: '91-111-2228' }
+  - { uid: 'job', cn: 'Job Tosspot', carLicense: 'CAR1237', sn: 'Tosspot', employeeNumber: 510, homePhone: '91-111-2227' }
+  - { uid: 'mob', cn: 'Moby Dick', carLicense: 'CAR1238', sn: 'Tosspot', employeeNumber: 511, homePhone: '91-111-2229' }
+
+ldap_groups:
+  - { cn: 'Beer', description: 'Beer Buffs', members: [job, dob, bon] }
+  - { cn: 'Gin', description: 'Gin Connoisseurs', members: [jon, don] }
+  - { cn: 'Wine', description: 'Wine Afficionadoes', members: [ron, bon] }
+  - { cn: 'Whisky', description: 'Whisky Devotees', members: [bob] }
+  - { cn: 'Rum', description: 'Rum Freaks', members: [bob, bon] }
