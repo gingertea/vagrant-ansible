@@ -4,6 +4,6 @@ master_name: k8s-master
 node_name_prefix: node
 number_of_nodes: 2
 calico_url: https://docs.projectcalico.org/v3.12/manifests/calico.yaml
-provision_local_volumes: false
-volume_size_gb: 1
+provision_local_volumes: true
+volume_size_gb: 4
 node_memory: 2048
