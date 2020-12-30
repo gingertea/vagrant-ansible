@@ -2,6 +2,31 @@
 - hosts: all
   become: true
   tasks:
+    
+  - name: Install containerd- Create conf file for containerd modules
+    copy:
+      dest: "/etc/modules-load.d/containerd.conf"
+      content: |
+        overlay
+        br_netfilter
+
+  - name: Install containerd- Load modules
+    shell: |
+      modprobe overlay
+      modprobe br_netfilter
+
+  - name: Install containerd- Setup required sysctl params, these persist across reboots
+    copy:
+      dest: "/etc/sysctl.d/99-kubernetes-cri.conf"
+      content: |
+        net.bridge.bridge-nf-call-iptables  = 1
+        net.ipv4.ip_forward                 = 1
+        net.bridge.bridge-nf-call-ip6tables = 1
+
+  - name: Install containerd- Apply sysctl params without reboot
+    shell: |
+      sysctl --system
+
   - name: Install packages that allow apt to be used over HTTPS
     apt:
       name: "{{ packages }}"
@@ -15,33 +40,28 @@
       - gnupg-agent
       - software-properties-common
 
-  - name: Add an apt signing key for Docker
-    apt_key:
-      url: https://download.docker.com/linux/ubuntu/gpg
-      state: present
-
-  - name: Add apt repository for stable version
-    apt_repository:
-      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable
-      state: present
-
-  - name: Install docker and its dependencies
+  - name:  Install containerd package
     apt:
-      name: "{{ packages }}"
+      name: containerd
       state: present
-      update_cache: yes
-    vars:
-      packages:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-    notify:
-      - docker status
 
-  - name: Add vagrant user to docker group
-    user:
-      name: vagrant
-      group: docker
+  - name: Create containerd configuration directory
+    file:
+      path: /etc/containerd
+      state: directory
+
+  - name: Creating containerd config file
+    file:
+      path: "/etc/containerd/config.toml"
+      state: touch
+
+  - name: Redirect output of containerd config command
+    shell: containerd config default > "/etc/containerd/config.toml"
+
+  - name: Restart containerd
+    systemd:
+      name: containerd
+      state: restarted
 
   - name: Remove swapfile from /etc/fstab
     mount:
@@ -96,6 +116,37 @@
   - name: Join the node to cluster
     command: sh /tmp/join-command.sh
 
+  - name: Download crictl
+    get_url:
+      url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{ crictl_version }}/crictl-v{{ crictl_version }}-linux-amd64.tar.gz"
+      dest: /tmp
+
+  - name: Create crictl configuration directory
+    file:
+      path: /etc/crictl
+      state: directory
+
+  - name: Creating crictl config file
+    file:
+      path: "/etc/crictl/crictl.yaml"
+      state: touch
+
+  - name: Populate crictl config file
+    copy:
+      dest: "/etc/crictl/crictl.yaml"
+      content: |
+        runtime-endpoint: unix:///run/containerd/containerd.sock
+        image-endpoint: unix:///run/containerd/containerd.sock
+        timeout: 10
+        debug: true
+
+  - name: Extract crictl tar into /usr/local/bin
+    unarchive:
+      src: "/tmp/crictl-v{{ crictl_version }}-linux-amd64.tar.gz"
+      dest: /usr/local/bin
+      mode: 0755
+      remote_src: yes
+
   - stat:
       path: /dev/sdc
     register: additional_disk
@@ -124,12 +175,8 @@
 
   - name: Modify permissions of mount directory
     file:
-      path: /mnt/disk
+      path: /tmp/mnt/disk
       state: directory
       mode: 0755
       owner: vagrant
     when: additional_disk.stat.exists
-
-  handlers:
-    - name: docker status
-      service: name=docker state=started
