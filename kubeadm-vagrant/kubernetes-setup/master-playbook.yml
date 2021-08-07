@@ -150,16 +150,19 @@
     get_url:
       url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/v{{ crictl_version }}/crictl-v{{ crictl_version }}-linux-amd64.tar.gz"
       dest: /tmp
+    tags: crictl
 
   - name: Create crictl configuration directory
     file:
       path: /etc/crictl
       state: directory
+    tags: crictl
 
   - name: Creating crictl config file
     file:
       path: "/etc/crictl/crictl.yaml"
       state: touch
+    tags: crictl
 
   - name: Populate crictl config file
     copy:
@@ -169,6 +172,7 @@
         image-endpoint: unix:///run/containerd/containerd.sock
         timeout: 10
         debug: true
+    tags: crictl
 
   - name: Extract crictl tar into /usr/local/bin
     unarchive:
@@ -176,3 +180,15 @@
       dest: /usr/local/bin
       mode: 0755
       remote_src: yes
+    tags: crictl
+
+  - name: Set environment variables for crictl command endpoints
+    blockinfile: |
+      dest=/home/vagrant/.profile backup=yes
+      content="export IMAGE_SERVICE_ENDPOINT=unix:///run/containerd/containerd.sock
+      export CONTAINER_RUNTIME_ENDPOINT=unix:///run/containerd/containerd.sock"
+    tags: crictl
+
+  - name: Source ~/.profile file to shell
+    shell: bash -c 'source /home/vagrant/.profile'
+    tags: crictl
