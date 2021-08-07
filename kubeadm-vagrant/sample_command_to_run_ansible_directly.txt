@@ -1,0 +1,2 @@
+cd kubernetes-setup
+nsible-playbook -i ../inventory.ini master-playbook.yml --tags "crictl" --private-key=~/.vagrant.d/insecure_private_key -u vagrant -e '@../vagrant.yaml' --limit master
