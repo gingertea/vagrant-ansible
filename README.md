@@ -40,12 +40,12 @@ vagrant up
 ```
 To test if the server is up, check if you can access the server URL (https:// _server_ip_:8443.
 
-You should see a CA certificate file named _server\_ip_ CA.crt inside the docker-private-registry-setup directory after the provisioning is complete. This certificate needs to be copied to all your docker clients in a directory named _server_ip_:8443 inside the docker config directory.
+You should see a CA certificate file named _server\_ip_ CA.crt inside the docker-private-registry-setup/temp directory after the provisioning is complete. This certificate needs to be copied to all your docker clients in a directory named _server_ip_:8443 inside the docker config directory.
 
 For instance, to access the registry from your host machine with external IP 192.168.1.10, do the following:
 ```
 sudo mkdir -p /etc/docker/certs.d/192.168.1.10:8443
-cd docker-private-registry-setup/192.168.1.10_CA.crt \
+cp docker-private-registry-setup/temp/192.168.1.10_CA.crt \
 /etc/docker/certs.d/192.168.1.10:8443
 
 ```
@@ -77,7 +77,7 @@ After the provisioning is complete, you should find a  ldap_ca_cert.pem file ins
 
 Assuming that you have run this example with the defaults with the server IP set to 192.168.1.10, run this command to test that the server is running and accepting connections:
 ```
-ldapsearch -x -b "dc=directory,dc=example,dc=com" -H ldap://192.168.1.10:1389 -D "cn=admin,dc=directory,dc=example,dc=com" -w secret 
+ldapsearch -x -b "dc=directory,dc=example,dc=com" -H ldap://192.168.1.10:1389 -D "cn=admin,dc=directory,dc=example,dc=com" -w secret
 ```
 
 Known issues:
