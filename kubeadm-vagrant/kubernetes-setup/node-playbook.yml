@@ -1,6 +1,7 @@
 ---
 - hosts: all
   become: true
+  gather_facts: yes
   tasks:
 
   - name: Install containerd- Create conf file for containerd modules
@@ -102,7 +103,7 @@
     copy:
       dest: "/etc/default/kubelet"
       content: |
-        KUBELET_EXTRA_ARGS=--node-ip="{{ node_ip }}"
+        KUBELET_EXTRA_ARGS=--node-ip="{{ ansible_enp0s8.ipv4.address }}"
 
   - name: Restart kubelet
     service:
