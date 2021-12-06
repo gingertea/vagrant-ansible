@@ -2,3 +2,6 @@
 *.log
 docker-registry-vagrant/docker-private-registry-setup/temp
 openldap-vagrant/openldap-setup/temp
+*/temp
+kubeadm-vagrant/examples/
+storage/
